@@ -97,7 +97,7 @@ double oldAccx = 0, oldSpx = 0, oldAccy = 0, oldSpy = 0; //一つ前の加速度
 bool sflg = true; //trueでロボット停止してる
 
 bool IMU_flg = false; //IMU timer flag
-double cf = 0.2; //complemental filter no keisuu
+double cf = 0.8; //complemental filter no keisuu
 
 char rcv = 'l';
 unsigned char pwm = 0;
@@ -283,14 +283,26 @@ void loop() {
   
   if(t_flg){
     digitalWrite(47, HIGH); //debug
+//    Wire.beginTransmission(ADDR);
+//    Wire.write(ACCEL_XOUT_H);  // starting with register 0x3B (ACCEL_XOUT_H)
+//    Wire.endTransmission(false);
+//    Wire.requestFrom(ADDR,14,true);  // request a total of 14 registers
+//    AcX=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)    
+//    AcY=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
+//    AcZ=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
+//    Tmp=(int16_t)(Wire.read()<<8|Wire.read());  // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
+//    GyX=(int16_t)(Wire.read()<<8|Wire.read());  // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
+//    GyY=(int16_t)(Wire.read()<<8|Wire.read());  // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
+//    GyZ=(int16_t)(Wire.read()<<8|Wire.read());  // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
+
+    GyZ = (GyZ > 100 || GyZ < -1000) ? GyZ : 0;
     rad = GyZ * 3.14159 /(131 * 180); //131 LSB/deg/s 
     acxyt[2] += (rad + oldrad) * 0.099904 / 2;
     oldrad = rad;
-    Serial.write("x:");Serial.println(enxyt[0],5);
-    Serial.write("y:");Serial.println(enxyt[1],5);
-    Serial.write("T:");Serial.println((1 - cf)*enxyt[2] - cf*acxyt[2], 5); //(enxyt[2] + acxyt[2]) / 2, 5);
-    //Serial.println(-acxyt[2], 5); //IMUの向き逆
-    //Serial.println(enxyt[2], 5);
+    Serial.write("x:");Serial.println(enxyt[0], 5);
+    Serial.write("y:");Serial.println(enxyt[1], 5);
+    Serial.write("T:");Serial.println((1 - cf)*enxyt[2] + cf*acxyt[2], 5); //(enxyt[2] + acxyt[2]) / 2, 5);
+    //Serial.println(acxyt[2], 5);
     t_flg = false;
     enxyt[0] = 0; enxyt[1] = 0; enxyt[2] = 0; acxyt[0] = 0; acxyt[1] = 0; acxyt[2] = 0;
     digitalWrite(47, LOW);
@@ -298,49 +310,12 @@ void loop() {
   
   if(IMU_flg){
     Wire.beginTransmission(ADDR);
-    Wire.write(ACCEL_XOUT_H);  // starting with register 0x3B (ACCEL_XOUT_H)
+    Wire.write(0x47);  // starting with register 0x3B (ACCEL_XOUT_H)
     Wire.endTransmission(false);
-    Wire.requestFrom(ADDR,14,true);  // request a total of 14 registers
-    AcX=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)    
-    AcY=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
-    AcZ=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
-    Tmp=(int16_t)(Wire.read()<<8|Wire.read());  // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
-    GyX=(int16_t)(Wire.read()<<8|Wire.read());  // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
-    GyY=(int16_t)(Wire.read()<<8|Wire.read());  // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
+    Wire.requestFrom(ADDR,2,true);  // request a total of 14 registers
+
     GyZ=(int16_t)(Wire.read()<<8|Wire.read());  // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
     
-    //Serial.print("origAcX = ");Serial.print(AcX);
-    AcX -= avAcX;
-    AcX = (AcX > 100 || AcX < -100) ? AcX : 0; 
-    AcY -= avAcY;
-    AcY = (AcY > 100 || AcY < -100) ? AcY : 0;
-    GyZ -= avGyZ;
-    GyZ = (GyZ > 50 || GyZ < -50) ? GyZ : 0;  
-    
-    Accx = AcX * 9.80665 / 8192.0; //LSB sensitivity 16384 LSB/g センサの生データ→重力加速度[g]→加速度[m/s2]
-    lpvx = lpvx * fc + Accx * (1 - fc); //ローパスフィルタ　重力加速度の抽出
-    hpvx = Accx - lpvx; //ハイパスフィルタ （加速度＋重力加速度) - 重力加速度
-  
-    //speed
-    Spx = ((hpvx + oldAccx) * slptime) / 2 + Spx;
-    oldAccx = hpvx;
-    if(sflg /*&& !AcX*/)Spx = 0.0000;
-    //変位
-    acxyt[0] = ((Spx + oldSpx) * slptime) / 2 + acxyt[0];
-    oldSpx = Spx;
-    
-    //y
-    Accy = AcY * 9.80665 / 8192.0; //LSB sensitivity 16384 LSB/g センサの生データ→重力加速度[g]→加速度[m/s2]
-    lpvy = lpvy * fc + Accy * (1 - fc); //ローパスフィルタ　重力加速度の抽出
-    hpvy = Accy - lpvy; //ハイパスフィルタ （加速度＋重力加速度) - 重力加速度
-  
-    //speed
-    Spy = ((hpvy + oldAccy) * slptime) / 2 + Spy;
-    oldAccy = hpvy;
-    if(sflg /*&& !AcX*/)Spy = 0.0000;
-    //変位
-    acxyt[1] = ((Spy + oldSpy) * slptime) / 2 + acxyt[1];
-    oldSpy = Spy;
   }
 
 
@@ -421,19 +396,19 @@ ISR(TIMER2_COMPA_vect){
   IMU_flg = true;
   if(t_count == 6){ // 7割り込みごとに１回 割り込み周期0.014272*7=0.099904[s] だいたい0.1[s]
     t_flg = true;
-    
-    enxyt[0] += (A_mat[0][0]*wheel_k*count[0] + //0.00408:  2*3.14159/1540 = 0.004079987... (これにcountかければラジアン求まる) 
+    //enxyt は速度にしてるよ
+    enxyt[0] += (A_mat[0][0]*wheel_k*count[0] +  
                A_mat[0][1]*wheel_k*count[1] +
                A_mat[0][2]*wheel_k*count[2] +
-               A_mat[0][3]*wheel_k*count[3]) * 0.1;
+               A_mat[0][3]*wheel_k*count[3]);
     enxyt[1] += (A_mat[1][0]*wheel_k*count[0] +
                A_mat[1][1]*wheel_k*count[1] +
                A_mat[1][2]*wheel_k*count[2] +
-               A_mat[1][3]*wheel_k*count[3]) * 0.1;
+               A_mat[1][3]*wheel_k*count[3]);
     enxyt[2] += (A_mat[2][0]*wheel_k*count[0] +
                A_mat[2][1]*wheel_k*count[1] +
                A_mat[2][2]*wheel_k*count[2] +
-               A_mat[2][3]*wheel_k*count[3]) * 0.1;
+               A_mat[2][3]*wheel_k*count[3]);
     count[0] = 0;
     count[1] = 0;
     count[2] = 0;
@@ -607,39 +582,39 @@ void motorstop(){
 
 void navigation(char* abcd_pwm){
   if(abcd_pwm[0] >= 0){
+    digitalWrite(AF, LOW);
+    digitalWrite(AB, HIGH);
+    analogWrite(pwm_pin[0], 2 * (unsigned char)abcd_pwm[0]);
+  }else{
     digitalWrite(AF, HIGH);
     digitalWrite(AB, LOW);
     analogWrite(pwm_pin[0], 2 * (unsigned char)abcd_pwm[0]);
-  }else{
-    digitalWrite(AF, LOW);
-    digitalWrite(AB,HIGH);
-    analogWrite(pwm_pin[0], -2 * (int)abcd_pwm[0]);
   }
   if(abcd_pwm[1] >= 0){
+    digitalWrite(BF, LOW);
+    digitalWrite(BB, HIGH);
+    analogWrite(pwm_pin[1], 2 * (unsigned char)abcd_pwm[1]);
+  }else{
     digitalWrite(BF, HIGH);
     digitalWrite(BB, LOW);
     analogWrite(pwm_pin[1], 2 * (unsigned char)abcd_pwm[1]);
-  }else{
-    digitalWrite(BF, LOW);
-    digitalWrite(BB, HIGH);
-    analogWrite(pwm_pin[1], -2 * (int)abcd_pwm[1]);
   }
   if(abcd_pwm[2] >= 0){
+    digitalWrite(CF, HIGH);
+    digitalWrite(CB, LOW);
+    analogWrite(pwm_pin[2], 2 * (unsigned char)abcd_pwm[2]);
+  }else{
     digitalWrite(CF, LOW);
     digitalWrite(CB, HIGH);
     analogWrite(pwm_pin[2], 2 * (unsigned char)abcd_pwm[2]);
-  }else{
-    digitalWrite(CF, HIGH);
-    digitalWrite(CB, LOW);
-    analogWrite(pwm_pin[2], -2 * (int)abcd_pwm[2]);
   }
   if(abcd_pwm[3] >= 0){
+    digitalWrite(DF, HIGH);
+    digitalWrite(DB, LOW);
+    analogWrite(pwm_pin[3], 2 * (unsigned char)abcd_pwm[3]);
+  }else{
     digitalWrite(DF, LOW);
     digitalWrite(DB, HIGH);
     analogWrite(pwm_pin[3], 2 * (unsigned char)abcd_pwm[3]);
-  }else{
-    digitalWrite(DF, HIGH);
-    digitalWrite(DB, LOW);
-    analogWrite(pwm_pin[3], -2 * (int)abcd_pwm[3]);
   }
 }
