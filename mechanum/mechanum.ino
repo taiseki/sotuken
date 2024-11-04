@@ -52,7 +52,7 @@ B||---||C
 #define ly 0.1045 //寸法図から計算
 #define wheel_r 0.04 //radius
 
-#define wheel_k 0.001632 //車輪の回転数から速度を出す係数k
+#define wheel_k 0.011435 //車輪の回転数から速度を出す係数k
 /*
  *弧の長さl
  *l = 2*π*(wheel_r)*(count/1540) countはエンコーダのパルス数
@@ -62,6 +62,9 @@ B||---||C
  * v = l/t (tは割り込みの計算周期0.1[s]
  *   = (0.0001632/0.1)*count
  *   = 0.001632*count　[m/s]
+ * v = l/t (tは割り込みの計算周期0.014272[s]
+ *   = (0.0001632/0.014272)*count
+ *   = 0.01143497758*count　[m/s]
  */
 
 const double res = GEAR * PPR * 4; //encoder resolution
@@ -236,18 +239,10 @@ void loop() {
   }
   if(flag){
     digitalWrite(53, HIGH);
-//    Serial.println(count[0]);
-//    Serial.println(count[1]);
-//    Serial.println(count[2]);
-//    Serial.println(count[3]);
-//    Serial.print("degree0:");Serial.println(((double)count[0] / res) * 360); //360を2πにすればラジアン
-//    Serial.print("degree1:");Serial.println(((double)count[1] / res) * 360);
-//    Serial.print("degree2:");Serial.println(((double)count[2] / res) * 360);
-//    Serial.print("degree3:");Serial.println(((double)count[3] / res) * 360);
 
-    //Serial.write("x:");Serial.println(xyt[0],5);
-    //Serial.write("y:");Serial.println(xyt[1],5);
-    //Serial.write("T:");Serial.println(xyt[2],5);
+    Serial.write("x:");Serial.println(xyt[0],5);
+    Serial.write("y:");Serial.println(xyt[1],5);
+    Serial.write("T:");Serial.println(xyt[2],5);
     
     //1[m] 進んだかの確認
 //    if(xyt[0] > 1.00){
@@ -280,23 +275,13 @@ void loop() {
     hpv = Acc - lpv; //ハイパスフィルタ （加速度＋重力加速度) - 重力加速度
   
     //speed
-    Sp = ((Acc + oldAcc) * slptime) / 2 + Sp;
-    oldAcc = Acc;
+    Sp = ((hpv + oldAcc) * slptime) / 2 + Sp;
+    oldAcc = hpv;
     if(sflg /*&& !AcX*/)Sp = 0.0000;
     //変位
     x = ((Sp + oldSp) * slptime) / 2 + x;
     oldSp = Sp;
-    
-/*
-    //speed
-    Acc = AcX * 9.80665 / 8192.0; //[m/s2]
-    Sp = ((Acc + oldAcc) * slptime) / 2 + Sp;
-    oldAcc = Acc;
-  
-    //変位
-    x = ((Sp + oldSp) * slptime) / 2 + x;
-    oldSp = Sp;
-*/
+
 
     //Serial.print(" | AcX = "); Serial.print(AcX); 
 //    Serial.print("AcY:"); Serial.println(AcY); //G 9.8m/ss
@@ -381,7 +366,7 @@ unsigned char t_count = 0;
 
 ISR(TIMER2_COMPA_vect){
   
-  if(t_count == 7){ // 7割り込みごとに１回 割り込み周期0.014272*7=0.099904[s] だいたい0.1[s]
+  if(t_count == 0){ // 7割り込みごとに１回 割り込み周期0.014272*7=0.099904[s] だいたい0.1[s]
     flag = true;
     
     xyt[0] += (A_mat[0][0]*wheel_k*count[0] + //0.00408:  2*3.14159/1540 = 0.004079987... (これにcountかければラジアン求まる) 
