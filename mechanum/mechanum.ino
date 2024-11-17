@@ -631,7 +631,7 @@ void eachmotor(char* pwm){
     }else{
       digitalWrite(AF, LOW);
       digitalWrite(AB, HIGH);
-      analogWrite(pwm_pin[0], (uint8_t)pwm[0] * (-2));
+      analogWrite(pwm_pin[0], (uint8_t)pwm[0] * 2);
     }
     if(pwm[1] > 0){
       digitalWrite(BF, HIGH);
@@ -640,7 +640,7 @@ void eachmotor(char* pwm){
     }else{
       digitalWrite(BF, LOW);
       digitalWrite(BB, HIGH);
-      analogWrite(pwm_pin[1], (uint8_t)pwm[1] * (-2));
+      analogWrite(pwm_pin[1], (uint8_t)pwm[1] * 2);
     }
     if(pwm[2] > 0){
       digitalWrite(CF, LOW);
