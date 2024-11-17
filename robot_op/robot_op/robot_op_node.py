@@ -56,33 +56,47 @@ class OdomOpNode(Node):
     def msg_callback(self, msg):
         print("[cmd_vel][debug]linear.x", msg.linear.x, "linear.y", msg.linear.y, "angular.z", msg.angular.z)
         
-        #####################################
+        if (msg.linear.x + msg.linear.y + msg.angular.z) == 0.0:
+            self.ser.write('x'.encode())
+            return
+        ##########メカナムの運動学###########
         #|v0|   | 1 -1  lx + ly ||x.|
         #|v1| = | 1  1  lx + ly ||y.|
         #|v2|   |-1 -1  lx + ly ||T.|
         #|v3|   |-1  1  lx + ly |
-        #lx = 0.047, ly = 0.1045
+        #lx = 0.047, ly = 0.1045 lx+ly = 0.1515
         #####################################
-        v0 = 127*(msg.linear.x - msg.linear.y + msg.angular.z)
-        v1 = 127*(msg.linear.x + msg.linear.y + msg.angular.z)
-        v2 = 127*(-msg.linear.x - msg.linear.y + msg.angular.z)
-        v3 = 127*(-msg.linear.x + msg.linear.y + msg.angular.z)
+
+        v0 = int(100*(2 * msg.linear.x -  2 * msg.linear.y + msg.angular.z))
+        v1 = int(100*(2 * msg.linear.x + 2 * msg.linear.y + msg.angular.z))
+        v2 = int(100*(-2 * msg.linear.x - 2 * msg.linear.y + msg.angular.z))
+        v3 = int(100*(-2 * msg.linear.x + 2 * msg.linear.y + msg.angular.z))
+        #最大値 127
         v0 = 127 if v0 > 127 else v0
         v1 = 127 if v1 > 127 else v1
         v2 = 127 if v2 > 127 else v2
         v3 = 127 if v3 > 127 else v3
+        #最小値 -127
+        v0 = -127 if v0 < -127 else v0
+        v1 = -127 if v1 < -127 else v1
+        v2 = -127 if v2 < -127 else v2
+        v3 = -127 if v3 < -127 else v3
+        #1byteのマイナスの値に変換 
+        v0 = -((v0 ^ 0b11111111) + 1) if v0 < 0 else v0 
+        v1 = -((v1 ^ 0b11111111) + 1) if v1 < 0 else v1
+        v2 = -((v2 ^ 0b11111111) + 1) if v2 < 0 else v2
+        v3 = -((v3 ^ 0b11111111) + 1) if v3 < 0 else v3
 
-        print("[cmd_vel][debug] v0 =", v0)
-        print("[cmd_vel][debug] v1 =", v1)
-        print("[cmd_vel][debug] v2 =", v2)
-        print("[cmd_vel][debug] v3 =", v3)
-        data = [0x6E, \
-                int(64*(msg.linear.x - msg.linear.y + msg.angular.z)),\
-                int(64*(msg.linear.x + msg.linear.y + msg.angular.z)),\
-                int(64*(-msg.linear.x - msg.linear.y + msg.angular.z)),\
-                int(64*(-msg.linear.x + msg.linear.y + msg.angular.z))]
-        send_data = struct.pack('bbbbb', *data)
-        self.ser.write(send_data)
+        print("[cmd_vel][debug] v0 =", v0, bin(v0))
+        print("[cmd_vel][debug] v1 =", v1, bin(v1))
+        print("[cmd_vel][debug] v2 =", v2, bin(v2))
+        print("[cmd_vel][debug] v3 =", v3, bin(v3))
+        
+        data = [0x6E, v0, v1, v2, v3]
+        send_data = struct.pack('BBBBB', *data)
+        #print(bin(data[1]))
+        self.ser.write(data)
+        
         # self.ser.write('n'.encode()) 
         # self.ser.write(int(127*(msg.linear.x - msg.linear.y + msg.angular.z)))
         # self.ser.write(int(127*(msg.linear.x + msg.linear.y + msg.angular.z)))
