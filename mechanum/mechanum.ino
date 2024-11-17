@@ -29,6 +29,9 @@ A||---||D
   |   |
 B||---||C
 
+
+
+
  */
 
 //encoder pin
@@ -49,7 +52,7 @@ B||---||C
 #define ly 0.1045 //寸法図から計算
 #define wheel_r 0.04 //radius
 
-#define wheel_k 0.001632 //車輪の回転数から速度を出す係数k
+#define wheel_k 0.011435 //車輪の回転数から速度を出す係数k
 /*
  *弧の長さl
  *l = 2*π*(wheel_r)*(count/1540) countはエンコーダのパルス数
@@ -61,7 +64,7 @@ B||---||C
  *   = 0.001632*count　[m/s]
  * v = l/t (tは割り込みの計算周期0.014272[s]
  *   = (0.0001632/0.014272)*count
- *   = 0.001143497758*count　[m/s]
+ *   = 0.01143497758*count　[m/s]
  */
 
 const double res = GEAR * PPR * 4; //encoder resolution
@@ -77,7 +80,7 @@ const double res = GEAR * PPR * 4; //encoder resolution
 double AcX,AcY,AcZ,Tmp,GyX,GyY,GyZ, avAcX = 0;
 double rad = 0;
 double x = 0, y = 0, deg = 0;
-double slptime = 0.1;
+double slptime = 0.014272 * 7;
 
 //filter
 double fc = 0.6; //filter coefficient ローパスフィルタの係数　1に近づけるほど平滑化の度合いが大きい
@@ -232,9 +235,6 @@ void loop() {
       else sflg = true;
       //Serial.println("pwm:");
       //Serial.println(pwm);
-    }else if(rcv == 'r'){ //all reset
-      xyt[0] = 0; xyt[1] = 0; xyt[2] = 0;
-      x = 0;
     }
   }
   if(flag){
@@ -275,8 +275,8 @@ void loop() {
     hpv = Acc - lpv; //ハイパスフィルタ （加速度＋重力加速度) - 重力加速度
   
     //speed
-    Sp = ((Acc + oldAcc) * slptime) / 2 + Sp;
-    oldAcc = Acc;
+    Sp = ((hpv + oldAcc) * slptime) / 2 + Sp;
+    oldAcc = hpv;
     if(sflg /*&& !AcX*/)Sp = 0.0000;
     //変位
     x = ((Sp + oldSp) * slptime) / 2 + x;
@@ -292,7 +292,6 @@ void loop() {
     Serial.print("hpv:"); Serial.println(hpv, 5);
     Serial.print("spd:"); Serial.println(Sp, 5);
     Serial.print("acx:"); Serial.println(-x, 5); //sensorのつける向き逆？
-    Serial.print("en_acX:");Serial.println(xyt[0]*0.856 - x * 0.144, 5); //実測値の誤差　encoder:3.6% acc:21.4%
 
     //Serial.print(" | y = "); Serial.print(y, 5);
     //Serial.print(" | deg = "); Serial.print(deg, 5);
@@ -367,7 +366,7 @@ unsigned char t_count = 0;
 
 ISR(TIMER2_COMPA_vect){
   
-  if(t_count == 6){ // 7割り込みごとに１回 割り込み周期0.014272*7=0.099904[s] だいたい0.1[s]
+  if(t_count == 0){ // 7割り込みごとに１回 割り込み周期0.014272*7=0.099904[s] だいたい0.1[s]
     flag = true;
     
     xyt[0] += (A_mat[0][0]*wheel_k*count[0] + //0.00408:  2*3.14159/1540 = 0.004079987... (これにcountかければラジアン求まる) 

@@ -1,12 +1,15 @@
 import rclpy
 import serial
+import math
+import struct
 from pynput import keyboard
 
+from geometry_msgs.msg import Twist
 from rclpy.node import Node
 from std_msgs.msg import Char
 from std_msgs.msg import String
 from std_msgs.msg import Float32
-from turtlesim.msg import Pose  as NPose#X, Y, Theta tukau
+from turtlesim.msg import Pose as NPose#X, Y, Theta tukau
 
 ###############################################
 #ロボットの操縦方法
@@ -36,6 +39,7 @@ class OdomOpNode(Node):
     def __init__(self):
         super().__init__('robot_op_node')
         self.pub = self.create_publisher(NPose, 'op', 10)
+        self.sub = self.create_subscription(Twist, 'cmd_vel', self.msg_callback, 10)
         self.timer = self.create_timer(0.01, self.timer_callback)
         self.presskey = 0
         self.pwm = '0'
@@ -43,6 +47,47 @@ class OdomOpNode(Node):
         self.rcv_flg = 0
         self.robot_pose = NPose()
         self.ser.read_all() #ゴミを最初に全部読み取る
+        self.x = 0.0
+        self.y = 0.0
+        self.theta = 0.0
+        self.abx = 0.0
+        self.aby = 0.0
+
+    def msg_callback(self, msg):
+        print("[cmd_vel][debug]linear.x", msg.linear.x, "linear.y", msg.linear.y, "angular.z", msg.angular.z)
+        
+        #####################################
+        #|v0|   | 1 -1  lx + ly ||x.|
+        #|v1| = | 1  1  lx + ly ||y.|
+        #|v2|   |-1 -1  lx + ly ||T.|
+        #|v3|   |-1  1  lx + ly |
+        #lx = 0.047, ly = 0.1045
+        #####################################
+        v0 = 127*(msg.linear.x - msg.linear.y + msg.angular.z)
+        v1 = 127*(msg.linear.x + msg.linear.y + msg.angular.z)
+        v2 = 127*(-msg.linear.x - msg.linear.y + msg.angular.z)
+        v3 = 127*(-msg.linear.x + msg.linear.y + msg.angular.z)
+        v0 = 127 if v0 > 127 else v0
+        v1 = 127 if v1 > 127 else v1
+        v2 = 127 if v2 > 127 else v2
+        v3 = 127 if v3 > 127 else v3
+
+        print("[cmd_vel][debug] v0 =", v0)
+        print("[cmd_vel][debug] v1 =", v1)
+        print("[cmd_vel][debug] v2 =", v2)
+        print("[cmd_vel][debug] v3 =", v3)
+        data = [0x6E, \
+                int(64*(msg.linear.x - msg.linear.y + msg.angular.z)),\
+                int(64*(msg.linear.x + msg.linear.y + msg.angular.z)),\
+                int(64*(-msg.linear.x - msg.linear.y + msg.angular.z)),\
+                int(64*(-msg.linear.x + msg.linear.y + msg.angular.z))]
+        send_data = struct.pack('bbbbb', *data)
+        self.ser.write(send_data)
+        # self.ser.write('n'.encode()) 
+        # self.ser.write(int(127*(msg.linear.x - msg.linear.y + msg.angular.z)))
+        # self.ser.write(int(127*(msg.linear.x + msg.linear.y + msg.angular.z)))
+        # self.ser.write(int(127*(-msg.linear.x - msg.linear.y + msg.angular.z)))
+        # self.ser.write(int(127*(-msg.linear.x + msg.linear.y + msg.angular.z)))
 
     def timer_callback(self):
         c = self.ser.readline()
@@ -50,20 +95,27 @@ class OdomOpNode(Node):
             print(float(c[2:9].decode()))
             print(c.decode()) #debug
             if(c[0] == 120): #120:ascii 'x'
-                self.robot_pose.x = float(c[2:9].decode())
+                self.x = float(c[2:9].decode())
                 self.rcv_flg |= 0b001
             elif(c[0] == 121): #121:ascii 'y'
-                self.robot_pose.y = float(c[2:9].decode())
+                self.y = float(c[2:9].decode())
                 self.rcv_flg |= 0b010
             elif(c[0] == 84): #84 :ascii 'T'
-                self.robot_pose.theta = float(c[2:9].decode())
+                self.theta += float(c[2:9].decode())
                 self.rcv_flg |= 0b100
 
             if(self.rcv_flg == 0b111):
+                self.robot_pose.x += self.x * math.cos(self.theta) + self.y * math.cos(self.theta + 1.57079632679) #y軸はx軸と９０度 PI / 2 = 1.570796326794...
+                self.robot_pose.y += self.x * math.sin(self.theta) + self.y * math.sin(self.theta + 1.57079632679)
+                # self.robot_pose.x += math.sqrt(self.x*self.x + self.y*self.y)*math.cos(self.theta)
+                # self.robot_pose.y += math.sqrt(self.x*self.x + self.y*self.y)*math.sin(self.theta)
+                self.robot_pose.theta = self.theta
                 self.pub.publish(self.robot_pose)
                 self.rcv_flg = 0
         except ValueError:
             print("str to Float hennkann dekinakattayo")
+            # data = [0x30, 0x30, 0x30, 0x6E, 0x30, 0x30, 0x30, 0x30] #'n', '0', '0', '0', '0'
+            # self.ser.write(bytes(data))
         
         
         
@@ -136,7 +188,6 @@ class OdomOpNode(Node):
         oldstate = self.presskey
         oldpwm = self.pwm
         while rclpy.ok():
-            
             if(self.presskey != oldstate or self.pwm != oldpwm):
                 if(self.presskey & EMERGENCY):
                     print("EMERGENCY")
