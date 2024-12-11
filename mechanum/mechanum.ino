@@ -7,7 +7,10 @@
  * 
  *************************/
 #include <Wire.h>
- 
+//LED
+#define RED 53 
+#define GRN 49
+
 //MD pin
 #define AF 22//F...front, B...back 
 #define AB 24
@@ -52,7 +55,7 @@ B||---||C
 #define ly 0.1045 //寸法図から計算
 #define wheel_r 0.04 //radius
 
-#define wheel_k 0.011435 //車輪の回転数から速度を出す係数k
+#define wheel_k 0.001632 //車輪の回転数から速度を出す係数k
 /*
  *弧の長さl
  *l = 2*π*(wheel_r)*(count/1540) countはエンコーダのパルス数
@@ -74,25 +77,31 @@ const double res = GEAR * PPR * 4; //encoder resolution
 #define ADDR 0x68
 #define PWR_MGMT_1 0x6B
 #define ACCEL_XOUT_H 0x3B
+#define ACCEL_YOUT_H 0x3D
+#define GYRO_ZOUT_H 0x47
 #define CONFIG 0x1A
 #define ACCEL_CONFIG 0x1C
+#define GYRL_CONFIG 0x1B
 
-double AcX,AcY,AcZ,Tmp,GyX,GyY,GyZ, avAcX = 0;
-double rad = 0;
+double AcX,AcY,AcZ,Tmp,GyX,GyY,GyZ, avAcX = 0, avAcY = 0, avGyZ = 0;
+double rad = 0, oldrad = 0;
 double x = 0, y = 0, deg = 0;
-double slptime = 0.014272 * 7;
+double slptime = 0.0096;//0.014272 * 7; //in timer
 
 //filter
 double fc = 0.6; //filter coefficient ローパスフィルタの係数　1に近づけるほど平滑化の度合いが大きい
-double lpv = 0; //low-pass filter value
-double hpv = 0; //high-pass filter value
-double Acc = 0, Sp = 0; //加速度，速度
-double oldAcc = 0, oldSp = 0; //一つ前の加速度，速度
+double lpvx = 0, lpvy = 0; //low-pass filter value
+double hpvx = 0, hpvy = 0; //high-pass filter value
+double Accx = 0, Spx = 0, Accy = 0, Spy = 0; //加速度，速度
+double oldAccx = 0, oldSpx = 0, oldAccy = 0, oldSpy = 0; //一つ前の加速度，速度
 bool sflg = true; //trueでロボット停止してる
 
 void setup() {
   
   Serial.begin(115200);
+  //LED
+  pinMode(RED, OUTPUT);
+  pinMode(GRN, OUTPUT);
 
   //MD setting
   pinMode(AF, OUTPUT);
@@ -122,7 +131,7 @@ void setup() {
   pinMode(D_BP, INPUT);
 
   //debug pin
-  pinMode(53, OUTPUT);
+  pinMode(47, OUTPUT);
   //change interrupt (for encoder)
   PCMSK2 = 0b11111111; //pin change msk (PCINT23-16)
   PCICR = 0b00000100;  //use INT2 
@@ -159,14 +168,30 @@ void setup() {
   Wire.write(ACCEL_CONFIG);  // PWR_MGMT_1 register
   Wire.write(0b00001000);     // FullScaleRange:+-4g (LSB Sensitivity:8192 LSB/g)
   Wire.endTransmission(true);
+  Wire.beginTransmission(ADDR);
+  Wire.write(GYRL_CONFIG);  // gyro config register 
+  Wire.write(0b00000000);     // FullScaleRange:+-250deg/s (LSB Sensitivity:131 LSB/deg/s)
+  Wire.endTransmission(true);
   delay(1000);
   for(int i = 0; i < 10; i++){
     Wire.beginTransmission(ADDR);
     Wire.write(ACCEL_XOUT_H);  // starting with register 0x3B (ACCEL_XOUT_H)
     Wire.endTransmission(false);
-    Wire.requestFrom(ADDR,14,true);  // request a total of 14 registers
-    AcX=(int16_t)Wire.read()<<8|Wire.read();  // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)    
+    Wire.requestFrom(ADDR,2,true);  // request a total of 14 registers
+    AcX=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)    
     avAcX += AcX / 10;
+    Wire.beginTransmission(ADDR);
+    Wire.write(ACCEL_YOUT_H);  // starting with register 0x3B (ACCEL_XOUT_H)
+    Wire.endTransmission(false);
+    Wire.requestFrom(ADDR,2,true);  // request a total of 14 registers
+    AcY=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)    
+    avAcY += AcY / 10;
+    Wire.beginTransmission(ADDR);
+    Wire.write(GYRO_ZOUT_H);  // starting with register 0x3B (ACCEL_XOUT_H)
+    Wire.endTransmission(false);
+    Wire.requestFrom(ADDR,2,true);  // request a total of 14 registers
+    GyZ=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)    
+    avGyZ += GyZ / 10;
     delay(100);
     //Serial.println(avAcX); //debug
   }
@@ -182,7 +207,7 @@ unsigned char old = 0;
 unsigned char buf; 
 bool flag = false;
 
-double xyt[3] = {0,0,0};
+double acxyt[3] = {0,0,0}, enxyt[3] = {0, 0, 0}, xyt[3] = {0, 0, 0};
 
 void loop() {
   if(Serial.available()>0){
@@ -223,9 +248,13 @@ void loop() {
       for(int i = 0; i < 4; i++){
         *(pwm_ary + i) = 0;
       }
+      digitalWrite(RED, LOW);
+      digitalWrite(GRN, LOW);
       sflg = true;
       //Serial.println("pwm:0");
     }else if((int)rcv >= '0' & (int)rcv <= '9'){
+      digitalWrite(RED, LOW);
+      digitalWrite(GRN, HIGH);
       pwm  = convert_pwm((int)rcv - 48);
       for(int i = 0; i < 4; i++){
         *(pwm_ary + i) = pwm;
@@ -236,73 +265,98 @@ void loop() {
       //Serial.println("pwm:");
       //Serial.println(pwm);
     }
+    else if(rcv == 'n'){
+      digitalWrite(RED, HIGH);
+      digitalWrite(GRN, LOW);
+      while(Serial.available() < 4);
+      char abcd_pwm[4];
+      Serial.readBytes(abcd_pwm, 4);
+      navigation(abcd_pwm);      
+    }
   }
   if(flag){
-    digitalWrite(53, HIGH);
-
-    Serial.write("x:");Serial.println(xyt[0],5);
-    Serial.write("y:");Serial.println(xyt[1],5);
-    Serial.write("T:");Serial.println(xyt[2],5);
+    
+    digitalWrite(47, HIGH);
     
     //1[m] 進んだかの確認
-//    if(xyt[0] > 1.00){
+//    if(enxyt[0] > 1.00){
 //      Serial.println("1.00 susunndayo");
 //      motorstop();
 //      for(int i = 0; i < 4; i++){
 //        *(pwm_ary + i) = 0;
 //      }
 //    }
-    Wire.beginTransmission(ADDR);
-    Wire.write(ACCEL_XOUT_H);  // starting with register 0x3B (ACCEL_XOUT_H)
-    Wire.endTransmission(false);
-    Wire.requestFrom(ADDR,14,true);  // request a total of 14 registers
-    AcX=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)    
-    AcY=(int16_t)Wire.read()<<8|Wire.read();  // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
-    AcZ=(int16_t)Wire.read()<<8|Wire.read();  // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
-    Tmp=(int16_t)Wire.read()<<8|Wire.read();  // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
-    GyX=(int16_t)Wire.read()<<8|Wire.read();  // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
-    GyY=(int16_t)Wire.read()<<8|Wire.read();  // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
-    GyZ=(int16_t)Wire.read()<<8|Wire.read();  // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
-    
-    //Serial.print("origAcX = ");Serial.print(AcX);
-    AcX -= avAcX;
-    AcX = (AcX > 100 || AcX < -100) ? AcX : 0; 
-  //  AcY = (AcY > 1000 || AcY < -1000) ? AcY : 0; 
-  //  GyZ = (GyZ > 1000 || GyZ < -1000) ? GyZ : 0; 
-
-    Acc = AcX * 9.80665 / 8192.0; //LSB sensitivity 16384 LSB/g センサの生データ→重力加速度[g]→加速度[m/s2]
-    lpv = lpv * fc + Acc * (1 - fc); //ローパスフィルタ　重力加速度の抽出
-    hpv = Acc - lpv; //ハイパスフィルタ （加速度＋重力加速度) - 重力加速度
+    rad = GyZ * 3.14159 /(131 * 180); //131 LSB/deg/s 
+    acxyt[2] += (rad + oldrad) * 0.099904 / 2;
+    oldrad = rad;
+    Serial.write("x:");Serial.println(enxyt[0],5);
+    Serial.write("y:");Serial.println(enxyt[1],5);
+    Serial.write("T:");Serial.println((enxyt[2] + acxyt[2]) / 2, 5); //(enxyt[2] + acxyt[2]) / 2, 5);
+    //Serial.println(acxyt[2], 5);
+    flag = false;
+    enxyt[0] = 0; enxyt[1] = 0; enxyt[2] = 0; acxyt[0] = 0; acxyt[1] = 0; acxyt[2] = 0;
+    digitalWrite(47, LOW);
+  }
+  Wire.beginTransmission(ADDR);
+  Wire.write(ACCEL_XOUT_H);  // starting with register 0x3B (ACCEL_XOUT_H)
+  Wire.endTransmission(false);
+  Wire.requestFrom(ADDR,14,true);  // request a total of 14 registers
+  AcX=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)    
+  AcY=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
+  AcZ=(int16_t)(Wire.read()<<8|Wire.read());  // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
+  Tmp=(int16_t)(Wire.read()<<8|Wire.read());  // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
+  GyX=(int16_t)(Wire.read()<<8|Wire.read());  // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
+  GyY=(int16_t)(Wire.read()<<8|Wire.read());  // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
+  GyZ=(int16_t)(Wire.read()<<8|Wire.read());  // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
   
-    //speed
-    Sp = ((hpv + oldAcc) * slptime) / 2 + Sp;
-    oldAcc = hpv;
-    if(sflg /*&& !AcX*/)Sp = 0.0000;
-    //変位
-    x = ((Sp + oldSp) * slptime) / 2 + x;
-    oldSp = Sp;
+  //Serial.print("origAcX = ");Serial.print(AcX);
+  AcX -= avAcX;
+  AcX = (AcX > 100 || AcX < -100) ? AcX : 0; 
+  AcY -= avAcY;
+  AcY = (AcY > 100 || AcY < -100) ? AcY : 0;
+  GyZ -= avGyZ;
+  GyZ = (GyZ > 10 || GyZ < -10) ? GyZ : 0;  
+  
+  Accx = AcX * 9.80665 / 8192.0; //LSB sensitivity 16384 LSB/g センサの生データ→重力加速度[g]→加速度[m/s2]
+  lpvx = lpvx * fc + Accx * (1 - fc); //ローパスフィルタ　重力加速度の抽出
+  hpvx = Accx - lpvx; //ハイパスフィルタ （加速度＋重力加速度) - 重力加速度
+
+  //speed
+  Spx = ((hpvx + oldAccx) * slptime) / 2 + Spx;
+  oldAccx = hpvx;
+  if(sflg /*&& !AcX*/)Spx = 0.0000;
+  //変位
+  acxyt[0] = ((Spx + oldSpx) * slptime) / 2 + acxyt[0];
+  oldSpx = Spx;
+  
+  //y
+  Accy = AcY * 9.80665 / 8192.0; //LSB sensitivity 16384 LSB/g センサの生データ→重力加速度[g]→加速度[m/s2]
+  lpvy = lpvy * fc + Accy * (1 - fc); //ローパスフィルタ　重力加速度の抽出
+  hpvy = Accy - lpvy; //ハイパスフィルタ （加速度＋重力加速度) - 重力加速度
+
+  //speed
+  Spy = ((hpvy + oldAccy) * slptime) / 2 + Spy;
+  oldAccy = hpvy;
+  if(sflg /*&& !AcX*/)Spy = 0.0000;
+  //変位
+  acxyt[1] = ((Spy + oldSpy) * slptime) / 2 + acxyt[1];
+  oldSpy = Spy;
+
+  
 
 
-    //Serial.print(" | AcX = "); Serial.print(AcX); 
+  //Serial.print(" | AcX = "); Serial.print(AcX); 
 //    Serial.print("AcY:"); Serial.println(AcY); //G 9.8m/ss
 //    Serial.print(" | GyY = "); Serial.print(GyY);
 //    Serial.print("GyZ:"); Serial.println(GyZ); //deg/s
-    Serial.print("Acc:"); Serial.println(Acc,8); //m/s2
-    Serial.print("lpv:"); Serial.println(lpv, 5);
-    Serial.print("hpv:"); Serial.println(hpv, 5);
-    Serial.print("spd:"); Serial.println(Sp, 5);
-    Serial.print("acx:"); Serial.println(-x, 5); //sensorのつける向き逆？
+//  Serial.print("Acc:"); Serial.println(Accx,8); //m/s2
+//  Serial.print("lpv:"); Serial.println(lpvx, 5);
+//  Serial.print("hpv:"); Serial.println(hpvx, 5);
+//  Serial.print("spd:"); Serial.println(Spx, 5);
+//  Serial.print("acx:"); Serial.println(x, 5); 
 
-    //Serial.print(" | y = "); Serial.print(y, 5);
-    //Serial.print(" | deg = "); Serial.print(deg, 5);
-    Serial.println("");
-    flag = false;
-    digitalWrite(53, LOW);
-    //xyt[0] = 0; //xyt[1] = 0; xyt[3] = 0;
-  }
-
-
-
+  
+  
 }
 
 
@@ -366,24 +420,24 @@ unsigned char t_count = 0;
 
 ISR(TIMER2_COMPA_vect){
   
-  if(t_count == 0){ // 7割り込みごとに１回 割り込み周期0.014272*7=0.099904[s] だいたい0.1[s]
+  if(t_count == 6){ // 7割り込みごとに１回 割り込み周期0.014272*7=0.099904[s] だいたい0.1[s]
     flag = true;
     
-    xyt[0] += (A_mat[0][0]*wheel_k*count[0] + //0.00408:  2*3.14159/1540 = 0.004079987... (これにcountかければラジアン求まる) 
+    enxyt[0] += (A_mat[0][0]*wheel_k*count[0] + //0.00408:  2*3.14159/1540 = 0.004079987... (これにcountかければラジアン求まる) 
                A_mat[0][1]*wheel_k*count[1] +
                A_mat[0][2]*wheel_k*count[2] +
                A_mat[0][3]*wheel_k*count[3]) * 0.1;
-    xyt[1] += (A_mat[1][0]*wheel_k*count[0] +
+    enxyt[1] += (A_mat[1][0]*wheel_k*count[0] +
                A_mat[1][1]*wheel_k*count[1] +
                A_mat[1][2]*wheel_k*count[2] +
                A_mat[1][3]*wheel_k*count[3]) * 0.1;
-    xyt[2] += (A_mat[2][0]*wheel_k*count[0] +
+    enxyt[2] += (A_mat[2][0]*wheel_k*count[0] +
                A_mat[2][1]*wheel_k*count[1] +
                A_mat[2][2]*wheel_k*count[2] +
                A_mat[2][3]*wheel_k*count[3]) * 0.1;
-//    Serial.print("x:");Serial.println(xyt[0]);
-//    Serial.print("y:");Serial.println(xyt[1]);
-//    Serial.print("θ:");Serial.println(xyt[2]);
+//    Serial.print("x:");Serial.println(enxyt[0]);
+//    Serial.print("y:");Serial.println(enxyt[1]);
+//    Serial.print("θ:");Serial.println(enxyt[2]);
 //    Serial.println(A_mat[0][0]*wheel_k*count[0] +
 //                   A_mat[0][1]*wheel_k*count[1] +
 //                   A_mat[0][2]*wheel_k*count[2] +
@@ -564,5 +618,44 @@ void motorstop(){
   digitalWrite(DB, LOW);
   for(int i = 0; i < 4; i++){
     analogWrite(*(pwm_pin + i), 0);
+  }
+}
+
+void navigation(char* abcd_pwm){
+  if(abcd_pwm[0] >= 0){
+    digitalWrite(AF, LOW);
+    digitalWrite(AB, HIGH);
+    analogWrite(pwm_pin[0], 2 * (unsigned char)abcd_pwm[0]);
+  }else{
+    digitalWrite(AF, HIGH);
+    digitalWrite(AB, LOW);
+    analogWrite(pwm_pin[0], 2 * (unsigned char)abcd_pwm[0]);
+  }
+  if(abcd_pwm[1] >= 0){
+    digitalWrite(BF, LOW);
+    digitalWrite(BB, HIGH);
+    analogWrite(pwm_pin[1], 2 * (unsigned char)abcd_pwm[1]);
+  }else{
+    digitalWrite(BF, HIGH);
+    digitalWrite(BB, LOW);
+    analogWrite(pwm_pin[1], 2 * (unsigned char)abcd_pwm[1]);
+  }
+  if(abcd_pwm[2] >= 0){
+    digitalWrite(CF, HIGH);
+    digitalWrite(CB, LOW);
+    analogWrite(pwm_pin[2], 2 * (unsigned char)abcd_pwm[2]);
+  }else{
+    digitalWrite(CF, LOW);
+    digitalWrite(CB, HIGH);
+    analogWrite(pwm_pin[2], 2 * (unsigned char)abcd_pwm[2]);
+  }
+  if(abcd_pwm[3] >= 0){
+    digitalWrite(DF, HIGH);
+    digitalWrite(DB, LOW);
+    analogWrite(pwm_pin[3], 2 * (unsigned char)abcd_pwm[3]);
+  }else{
+    digitalWrite(DF, LOW);
+    digitalWrite(DB, HIGH);
+    analogWrite(pwm_pin[3], 2 * (unsigned char)abcd_pwm[3]);
   }
 }
