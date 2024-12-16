@@ -137,6 +137,7 @@ void setup() {
   PCICR = 0b00000100;  //use INT2 
 
   //timer interrupt
+  //debug
 //  Serial.println(TCCR2A); //config
 //  Serial.println(TCCR2B); //config
 //  Serial.println(TCNT2);

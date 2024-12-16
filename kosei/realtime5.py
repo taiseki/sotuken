@@ -165,9 +165,9 @@ class YOLONode(Node):
     
     def timer_callback(self):
         msg = Vector3()
-        msg.x = 
-        msg.y = 
-        msg.z = 
+        msg.x = 0.0
+        msg.y = 0.0
+        msg.z = 0.0
         self.pub.publish(msg)
         self.get_logger().info(f'Publishing: x={msg.x}, y={msg.y}, D(z)={msg.z}') #debug
 
