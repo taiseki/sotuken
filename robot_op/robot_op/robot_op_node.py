@@ -263,7 +263,7 @@ def main():
     try:
         node.KeyboardLoop()
     except KeyboardInterrupt:
-        print('Ctrl+C')
+        print('Ctrl+C osaretayo')
     node.destroy_node() #destroy
     rclpy.shutdown()
 

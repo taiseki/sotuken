@@ -4,6 +4,16 @@ import numpy as np
 from ultralytics import YOLO
 import threading
 
+#Moto
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Vector3
+
+#ROS2 init
+rclpy.init()
+node = YOLONode()
+
+
 # カメラの焦点距離と物体の実際の高さ
 focal_length = 500  # 必要に応じてキャリブレーションで変更
 Hreal = 10.0  # cm
@@ -104,13 +114,26 @@ try:
                 cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
             # ターミナルに結果を出力
+            detected_objects[0] #modelname
+            detected_objects[1] #Distance
+            detected_objects[2] #dx
+            detected_objects[3] #dy
             if detected_objects:
                 print("\n検出結果:")
                 for obj in detected_objects:
                     print(f" - {obj}")
+                if detected_objects[0] == 'alarm':
+                    node.dx = detected_objects[1]
+                    node.dy = detected_objects[2]
+                    node.dd = detected_objects[3]
+
             else:
                 print("\n検出結果: なし")
-
+                node.dx = -1.0
+                node.dy = -1.0
+                node.dd = -1.0
+            #ROS spin
+            rclpy.spin_once(node)
             # フレームを表示
             cv2.imshow("Distance Measurement", frame)
 
@@ -126,3 +149,25 @@ running = False
 capture_thread.join()
 cap.release()
 cv2.destroyAllWindows()
+#ROS2 end
+node.destory_node()
+rclpy.shutdown()
+
+#motoki ROS2
+class YOLONode(Node):
+    def __init__(self):
+        super().__init__('yolo_node')
+        self.pub = self.create_publisher(Vector3, 'yolo', 10)
+        self.timer = self.create_timer(0.1, self.timer_callback)
+        self.dx = 0.0
+        self.dy = 0.0
+        self.dd = 0.0
+    
+    def timer_callback(self):
+        msg = Vector3()
+        msg.x = 
+        msg.y = 
+        msg.z = 
+        self.pub.publish(msg)
+        self.get_logger().info(f'Publishing: x={msg.x}, y={msg.y}, D(z)={msg.z}') #debug
+
