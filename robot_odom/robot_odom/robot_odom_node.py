@@ -70,13 +70,13 @@ class OdomNode(Node):
         tf_lidar = TransformStamped()
         tf_lidar.header.frame_id = 'base_footprint'
         tf_lidar.child_frame_id = 'laser_frame'
-        tf_lidar.transform.translation.x = 0.1
-        tf_lidar.transform.translation.y = 0.1
-        tf_lidar.transform.translation.z = 0.1
-        tf_lidar.transform.rotation.w = 1.0
+        tf_lidar.transform.translation.x = -0.075
+        tf_lidar.transform.translation.y = -0.035
+        tf_lidar.transform.translation.z = 0.18
+        tf_lidar.transform.rotation.w = 0.9238796594468422
         tf_lidar.transform.rotation.x = 0.0
         tf_lidar.transform.rotation.y = 0.0
-        tf_lidar.transform.rotation.z = 0.0
+        tf_lidar.transform.rotation.z = 0.3826831259154
         tf_lidar.header.stamp = self.get_clock().now().to_msg()
         self.tf_laser_pub.sendTransform(tf_lidar)
         
