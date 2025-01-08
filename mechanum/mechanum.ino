@@ -3,8 +3,8 @@
  * 卒検のメカナムロボのプログラム
  * 4つのMD
  * エンコーダ
- * 
- * 
+ * IMU
+ * Navigation
  *************************/
 #include <Wire.h>
 //LED
@@ -32,14 +32,11 @@ A||---||D
   |   |
 B||---||C
 
-
-
-
  */
 
 //encoder pin
 #define A_AP A15 //A_AP...Aport_A_Phase
-#define A_BP 2
+#define A_BP A14
 #define B_AP A13
 #define B_BP A12
 #define C_AP A9
@@ -97,7 +94,7 @@ double oldAccx = 0, oldSpx = 0, oldAccy = 0, oldSpy = 0; //一つ前の加速度
 bool sflg = true; //trueでロボット停止してる
 
 bool IMU_flg = false; //IMU timer flag
-double cf = 0.2; //complemental filter no keisuu
+double cf = 0.9; //complemental filter no keisuu 1 de Gyro
 
 char rcv = 'l';
 unsigned char pwm = 0;
@@ -412,7 +409,7 @@ const double A_mat[3][4] = {
   {-0.25, 0.25, -0.25, 0.25},
   {-1/(4*(lx+ly)), -1/(4*(lx+ly)), -1/(4*(lx+ly)), -1/(4*(lx+ly))}
 };
-// ３行目　全部にマイナス→なんか回転方向違った
+// ３行目　全部にマイナス→なんか回転方向違った おそらくIMUの取り付け向き
 
 
 unsigned char t_count = 0;

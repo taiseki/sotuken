@@ -58,7 +58,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # YOLOv8モデルの読み込み (軽量なモデル)
-    model = YOLO("yolov8n.pt").to(device)
+    model = YOLO("best50.pt").to(device)
     global running, frame, cap
 
     # フレーム取得スレッド
@@ -113,9 +113,7 @@ def main():
                     dy_cm = (dy_pixels * D) / focal_length
 
                     # 検出結果に追加
-                    detected_objects.append(
-                        f"{model.names[cls]}: 距離 {D:.2f} cm, X方向: {dx_cm:.2f} cm, Y方向: {dy_cm:.2f} cm"
-                    )
+                    detected_objects = [model.names[cls], D, dx_cm, dy_cm]
 
                     # 描画
                     label = f"{model.names[cls]}: {D:.2f} cm, X: {dx_cm:.2f} cm, Y: {dy_cm:.2f} cm"
@@ -124,14 +122,13 @@ def main():
 
                 # ターミナルに結果を出力
                 if detected_objects:
-                    # detected_objects[0] #modelname
-                    # detected_objects[1] #Distance
-                    # detected_objects[2] #dx
-                    # detected_objects[3] #dy
+                    print("model nameeeeeeeeeee", detected_objects[0], "owari") #debug
+                    #detected_object[0] ni alarm X[] y[] Z[] haitteru
+
                     print("\n検出結果:")
                     for obj in detected_objects:
                         print(f" - {obj}")
-                    if detected_objects[0] == 'alarm':
+                    if detected_objects[0] == "alarm":
                         node.dx = detected_objects[1]
                         node.dy = detected_objects[2]
                         node.dd = detected_objects[3]

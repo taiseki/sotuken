@@ -56,7 +56,7 @@ class OdomOpNode(Node):
     def msg_callback(self, msg):
         print("[cmd_vel][debug]linear.x", msg.linear.x, "linear.y", msg.linear.y, "angular.z", msg.angular.z)
         
-        if (msg.linear.x + msg.linear.y + msg.angular.z) == 0.0:
+        if (msg.linear.x == 0.0 and msg.linear.y == 0.0 and msg.angular.z == 0.0):
             self.ser.write('x'.encode())
             return
         ##########メカナムの運動学###########
@@ -106,8 +106,8 @@ class OdomOpNode(Node):
     def timer_callback(self):
         c = self.ser.readline()
         try:
-            print(float(c[2:9].decode()))
             print(c.decode()) #debug
+            print(float(c[2:9].decode()))
             if(c[0] == 120): #120:ascii 'x'
                 self.x = float(c[2:9].decode())
                 self.rcv_flg |= 0b001
@@ -119,15 +119,15 @@ class OdomOpNode(Node):
                 self.rcv_flg |= 0b100
 
             if(self.rcv_flg == 0b111):
-                self.robot_pose.x += self.x * math.cos(self.theta) + self.y * math.cos(self.theta + 1.57079632679) #y軸はx軸と９０度 PI / 2 = 1.570796326794...
-                self.robot_pose.y += self.x * math.sin(self.theta) + self.y * math.sin(self.theta + 1.57079632679)
-                # self.robot_pose.x += math.sqrt(self.x*self.x + self.y*self.y)*math.cos(self.theta)
-                # self.robot_pose.y += math.sqrt(self.x*self.x + self.y*self.y)*math.sin(self.theta)
+                #self.robot_pose.x += self.x * math.cos(self.theta) + self.y * math.cos(self.theta + 1.57079632679) #y軸はx軸と９０度 PI / 2 = 1.570796326794...
+                #self.robot_pose.y += self.x * math.sin(self.theta) + self.y * math.sin(self.theta + 1.57079632679)
                 self.robot_pose.theta = self.theta
+                self.robot_pose.x += self.x * math.cos(self.theta) - self.y * math.sin(self.theta) #kaiten gyouretu
+                self.robot_pose.y += self.x * math.sin(self.theta) + self.y * math.cos(self.theta)
                 self.pub.publish(self.robot_pose)
                 self.rcv_flg = 0
         except ValueError:
-            print("str to Float hennkann dekinakattayo")
+            print("cant serial data received mosikuha Str to Float henkan dekinai")
             # data = [0x30, 0x30, 0x30, 0x6E, 0x30, 0x30, 0x30, 0x30] #'n', '0', '0', '0', '0'
             # self.ser.write(bytes(data))
         
@@ -263,7 +263,7 @@ def main():
     try:
         node.KeyboardLoop()
     except KeyboardInterrupt:
-        print('Ctrl+C osaretayo')
+        print('Ctrl+C')
     node.destroy_node() #destroy
     rclpy.shutdown()
 
