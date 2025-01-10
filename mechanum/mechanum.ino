@@ -378,7 +378,6 @@ ISR(PCINT2_vect){
   count[2] += table[(old & 0b00110000) >> 4][(buf & 0b00110000) >> 4];
   count[3] += table[(old & 0b11000000) >> 6][(buf & 0b11000000) >> 6];
   old = PINK;
-  //t_flg = true;
   /*
    * count0:front_left
    * count1:back_left
@@ -409,7 +408,7 @@ const double A_mat[3][4] = {
   {-0.25, 0.25, -0.25, 0.25},
   {-1/(4*(lx+ly)), -1/(4*(lx+ly)), -1/(4*(lx+ly)), -1/(4*(lx+ly))}
 };
-// ３行目　全部にマイナス→なんか回転方向違った おそらくIMUの取り付け向き
+// ３行目　全部にマイナス→なんか回転方向違った
 
 
 unsigned char t_count = 0;
