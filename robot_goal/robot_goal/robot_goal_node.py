@@ -9,7 +9,7 @@ class GoalPublisher(Node):
         super().__init__('goal_publisher')
         self.publisher = self.create_publisher(PoseStamped, '/goal_pose', 10)
         self.timer = self.create_timer(1, self.publish_goal)
-        self.di = 0.0 #distance 
+        self.di = 0.0 #目標値
 
     def publish_goal(self):
         # PoseStampedメッセージの作成
