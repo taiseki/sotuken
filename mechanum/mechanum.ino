@@ -28,17 +28,17 @@
 /*
 
 メカナムホイールの配置
-A||---||D
+A||---||C
   |   |
-B||---||C
+B||---||D
 
  */
 
 //encoder pin
-#define A_AP A15 //A_AP...Aport_A_Phase
-#define A_BP A14
-#define B_AP A13
-#define B_BP A12
+#define A_AP A13
+#define A_BP A12
+#define B_AP A15 //A_AP...Aport_A_Phase
+#define B_BP A14
 #define C_AP A9
 #define C_BP A8
 #define D_AP A11
@@ -47,12 +47,14 @@ B||---||C
 #define GEAR 35 //gear ratio ギア比
 #define PPR 11 //encoder PPR
 
+#define int_time 0.014272
+
 //robot size
 #define lx 0.047 //実測値[m]　誤差すごいかも
 #define ly 0.1045 //寸法図から計算
 #define wheel_r 0.04 //radius
 
-#define wheel_k 0.001632 //車輪の回転数から速度を出す係数k
+#define wheel_k 0.003812 //車輪の回転数から速度を出す係数k
 /*
  *弧の長さl
  *l = 2*π*(wheel_r)*(count/1540) countはエンコーダのパルス数
@@ -65,9 +67,13 @@ B||---||C
  * v = l/t (tは割り込みの計算周期0.014272[s]
  *   = (0.0001632/0.014272)*count
  *   = 0.01143497758*count　[m/s]
+ * v = l/t (tは割り込みの計算周期0.014272*3[s]
+ *   = (0.0001632/0.042816)*count
+ *   = 0.00381165919*count　[m/s]
  */
 
 const double res = GEAR * PPR * 4; //encoder resolution
+
 
 //GYT521 (MPU6050)
 
@@ -80,10 +86,13 @@ const double res = GEAR * PPR * 4; //encoder resolution
 #define ACCEL_CONFIG 0x1C
 #define GYRL_CONFIG 0x1B
 
+int int_num = 3;
+
 double AcX,AcY,AcZ,Tmp,GyX,GyY,GyZ, avAcX = 0, avAcY = 0, avGyZ = 0;
 double rad = 0, oldrad = 0;
 double x = 0, y = 0, deg = 0;
-double slptime = 0.014272;//0.014272 * 7; //in timer
+double slptime = int_time;//0.014272 * 7; //in timer
+double dt = int_time * (double)int_num;
 
 //filter
 double fc = 0.6; //filter coefficient ローパスフィルタの係数　1に近づけるほど平滑化の度合いが大きい
@@ -281,7 +290,7 @@ void loop() {
   if(t_flg){
     digitalWrite(47, HIGH); //debug
     rad = GyZ * 3.14159 /(131 * 180); //131 LSB/deg/s 
-    acxyt[2] += (rad + oldrad) * 0.099904 / 2;
+    acxyt[2] += (rad + oldrad) * dt / 2;
     oldrad = rad;
     Serial.write("x:");Serial.println(enxyt[0],5);
     Serial.write("y:");Serial.println(enxyt[1],5);
@@ -312,7 +321,7 @@ void loop() {
     AcY -= avAcY;
     AcY = (AcY > 100 || AcY < -100) ? AcY : 0;
     GyZ -= avGyZ;
-    GyZ = (GyZ > 50 || GyZ < -50) ? GyZ : 0;  
+    GyZ = (GyZ > 60 || GyZ < -60) ? GyZ : 0;  
     
     Accx = AcX * 9.80665 / 8192.0; //LSB sensitivity 16384 LSB/g センサの生データ→重力加速度[g]→加速度[m/s2]
     lpvx = lpvx * fc + Accx * (1 - fc); //ローパスフィルタ　重力加速度の抽出
@@ -375,8 +384,8 @@ ISR(PCINT2_vect){
   buf = PINK;
   count[0] += table[ old & 0b00000011      ][ buf & 0b00000011      ];
   count[1] += table[(old & 0b00001100) >> 2][(buf & 0b00001100) >> 2];
-  count[2] += table[(old & 0b00110000) >> 4][(buf & 0b00110000) >> 4];
-  count[3] += table[(old & 0b11000000) >> 6][(buf & 0b11000000) >> 6];
+  count[3] += table[(old & 0b00110000) >> 4][(buf & 0b00110000) >> 4];
+  count[2] += table[(old & 0b11000000) >> 6][(buf & 0b11000000) >> 6];
   old = PINK;
   /*
    * count0:front_left
@@ -415,21 +424,21 @@ unsigned char t_count = 0;
 
 ISR(TIMER2_COMPA_vect){
   IMU_flg = true;
-  if(t_count == 6){ // 7割り込みごとに１回 割り込み周期0.014272*7=0.099904[s] だいたい0.1[s]
+  if(t_count == (int_num - 1)){ // 7割り込みごとに１回 割り込み周期0.014272*7=0.099904[s] だいたい0.1[s]
     t_flg = true;
     
     enxyt[0] += (A_mat[0][0]*wheel_k*count[0] + //0.00408:  2*3.14159/1540 = 0.004079987... (これにcountかければラジアン求まる) 
                A_mat[0][1]*wheel_k*count[1] +
                A_mat[0][2]*wheel_k*count[2] +
-               A_mat[0][3]*wheel_k*count[3]) * 0.1;
+               A_mat[0][3]*wheel_k*count[3]) * dt;
     enxyt[1] += (A_mat[1][0]*wheel_k*count[0] +
                A_mat[1][1]*wheel_k*count[1] +
                A_mat[1][2]*wheel_k*count[2] +
-               A_mat[1][3]*wheel_k*count[3]) * 0.1;
+               A_mat[1][3]*wheel_k*count[3]) * dt;
     enxyt[2] += (A_mat[2][0]*wheel_k*count[0] +
                A_mat[2][1]*wheel_k*count[1] +
                A_mat[2][2]*wheel_k*count[2] +
-               A_mat[2][3]*wheel_k*count[3]) * 0.1;
+               A_mat[2][3]*wheel_k*count[3]) * dt;
     count[0] = 0;
     count[1] = 0;
     count[2] = 0;
@@ -605,37 +614,45 @@ void navigation(char* abcd_pwm){
   if(abcd_pwm[0] >= 0){
     digitalWrite(AF, HIGH);
     digitalWrite(AB, LOW);
+    if(abcd_pwm[0] < 17)abcd_pwm[0] = 17; //threthold
     analogWrite(pwm_pin[0], 2 * (unsigned char)abcd_pwm[0]);
   }else{
     digitalWrite(AF, LOW);
     digitalWrite(AB,HIGH);
+    if(abcd_pwm[0] > -17)abcd_pwm[0] = -17;
     analogWrite(pwm_pin[0], -2 * (int)abcd_pwm[0]);
   }
   if(abcd_pwm[1] >= 0){
     digitalWrite(BF, HIGH);
     digitalWrite(BB, LOW);
+    if(abcd_pwm[1] < 17)abcd_pwm[1] = 17;
     analogWrite(pwm_pin[1], 2 * (unsigned char)abcd_pwm[1]);
   }else{
     digitalWrite(BF, LOW);
     digitalWrite(BB, HIGH);
+    if(abcd_pwm[1] > -17)abcd_pwm[1] = -17;
     analogWrite(pwm_pin[1], -2 * (int)abcd_pwm[1]);
   }
   if(abcd_pwm[2] >= 0){
     digitalWrite(CF, LOW);
     digitalWrite(CB, HIGH);
+    if(abcd_pwm[2] < 17)abcd_pwm[2] = 17;
     analogWrite(pwm_pin[2], 2 * (unsigned char)abcd_pwm[2]);
   }else{
     digitalWrite(CF, HIGH);
     digitalWrite(CB, LOW);
+    if(abcd_pwm[2] > -17)abcd_pwm[2] = -17;
     analogWrite(pwm_pin[2], -2 * (int)abcd_pwm[2]);
   }
   if(abcd_pwm[3] >= 0){
     digitalWrite(DF, LOW);
     digitalWrite(DB, HIGH);
+    if(abcd_pwm[3] < 17)abcd_pwm[3] = 17;
     analogWrite(pwm_pin[3], 2 * (unsigned char)abcd_pwm[3]);
   }else{
     digitalWrite(DF, HIGH);
     digitalWrite(DB, LOW);
+    if(abcd_pwm[3] > -17)abcd_pwm[3] = -17;
     analogWrite(pwm_pin[3], -2 * (int)abcd_pwm[3]);
   }
 }
